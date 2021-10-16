@@ -1,0 +1,261 @@
+---
+title: "【PHP入門】json_encodeで明示的に配列・オブジェクトにエンコードさせる"
+emoji: "🐣"
+type: "tech" # tech: 技術記事 / idea: アイデア
+topics: ["PHP", "JSON"]
+published: true
+---
+
+# まとめ
+
+- 明示的に配列にするときには`array_values`しておく
+- 明示的にオブジェクトにするときには`JSON_FORCE_OBJECT`オプションを付ける
+- 空オブジェクトにしたいだけなら`stdClass()`を使う
+
+# 本文
+
+## PHPにおける配列と連想配列
+
+ご存知の通り、PHPにおいて配列と連想配列とは同じ文法です。
+
+```php:array_map.php
+<?php
+
+$array = [
+    0 => 'dog',
+    1 => 'cat',
+    2 => 'bear',
+    3 => 'rabbit',
+    4 => 'fox',
+];
+
+echo json_encode($array) . PHP_EOL;
+
+$map = [
+    'apple' => 'red',
+    'lemon' => 'yellow',
+    'grape' => 'purple',
+    'melon' => 'green',
+    'peach' => 'pink',
+];
+
+echo json_encode($map);
+```
+
+ただし、`json_encode`でエンコードするときはそれぞれ配列・オブジェクトにしてくれます。賢い。
+
+```bash
+php array_map.php
+["dog","cat","bear","rabbit","fox"]
+{"apple":"red","lemon":"yellow","grape":"purple","melon":"green","peach":"pink"}
+```
+
+## 配列にならない罠とその解決手段
+
+### 罠
+
+しかし`json_encode`を過信すると、想定と異なるエンコードをされるときがあります。
+以下では、配列を`array_filter`によってフィルターした**配列**をエンコードしています。
+
+```php:array_trap.php
+<?php
+
+$array = [
+    0 => 'dog',
+    1 => 'cat',
+    2 => 'bear',
+    3 => 'rabbit',
+    4 => 'fox',
+];
+
+// 3文字以下のみを選択
+$filtered_array = array_filter($array, function ($value) {
+    return strlen($value) <= 3;
+});
+
+// フィルターされた配列が返ってくると期待
+echo json_encode($filtered_array);
+```
+
+しかし、このスクリプトを実行すると、予想に反してオブジェクトが返ってきます。
+
+```bash
+php array_trap.php
+{"0":"dog","1":"cat","4":"fox"}
+```
+
+結果を見れば、なぜそうなったかが分かると思います。
+
+- `array_filter`ではキーは保持される
+- 0からの連続の添字となっていなければ連想配列として判定され、オブジェクトとしてエンコードされる
+
+### 解決手段
+
+これの解決手段としては、`array_values`を使って数字の添字を付け直すというやり方が一般的です。
+
+```php:array1.php
+<?php
+
+$array = [
+    0 => 'dog',
+    1 => 'cat',
+    2 => 'bear',
+    3 => 'rabbit',
+    4 => 'fox',
+];
+
+// 3文字以下のみを選択
+$filtered_array = array_filter($array, function ($value) {
+    return strlen($value) <= 3;
+});
+
+// 数字の添字を付け直す
+$filtered_array = array_values($filtered_array);
+
+echo json_encode($filtered_array);
+```
+
+無事、配列としてエンコードしてくれます。
+
+```bash
+php array1.php
+["dog","cat","fox"]
+```
+
+## オブジェクトにならない罠とその解決手段
+
+### 罠1
+
+以下の例では、`$map`の中から、値が`blue`になるものだけを選択するようにします。 
+実際には`blue`はありませんので、フィルターされた結果は**空連想配列**となることが期待されます。
+
+```php:map_trap1.php
+<?php
+
+$map = [
+    'apple' => 'red',
+    'lemon' => 'yellow',
+    'grape' => 'purple',
+    'melon' => 'green',
+    'peach' => 'pink',
+];
+
+// 青色だけを選択。結果は空連想配列。
+$filtered_map = array_filter($map, function ($value) {
+    return $value === 'blue';
+});
+
+// 空オブジェクトを期待
+echo json_encode($filtered_map);
+
+```
+
+しかし、実際には結果は空配列となってしまいます。
+
+```bash
+php map_trap1.php
+[]
+```
+
+`json_encode`からすると空配列か空連想配列かを見分けることができず、空配列として判定されてしまっているというわけです。
+
+### 解決策1
+
+`json_encode`には`JSON_FORCE_OBJECT`というオプションがあります。
+
+```php:map1.php
+<?php
+
+$map = [
+    'apple' => 'red',
+    'lemon' => 'yellow',
+    'grape' => 'purple',
+    'melon' => 'green',
+    'peach' => 'pink',
+];
+
+// 青色だけを選択
+$filtered_map = array_filter($map, function ($value) {
+    return $value === 'blue';
+});
+
+// 強制的にオブジェクトにする
+echo json_encode($filtered_map, JSON_FORCE_OBJECT);
+```
+
+名前の通り、強制的にオブジェクトに変換するオプションで、空配列であっても空オブジェクトへとエンコードすることができます。
+
+```bash
+php map1.php
+{}
+```
+
+### 罠2
+
+しかし、この方法には欠点があります。
+多次元の構造になっているときであっても、全ての構造をオブジェクトにしてしまいます。
+
+```php:map_trap2.php
+<?php
+
+$map = [
+    'even' => [0, 2, 4, 6, 8,],
+    'odd' => [1, 3, 5, 7, 9,],
+    'prime' => [2, 3, 5, 7,],
+];
+
+echo json_encode($map, JSON_FORCE_OBJECT);
+```
+
+配列としてエンコードしたかった部分も、オブジェクトとしてエンコードされてしまいます。
+
+```bash
+php map_trap2.php
+{"even":{"0":0,"1":2,"2":4,"3":6,"4":8},"odd":{"0":1,"1":3,"2":5,"3":7,"4":9},"prime":{"0":2,"1":3,"2":5,"3":7}}
+```
+
+### 解決策2
+
+これに関しては実はあまり根本的な解決策はないのですが[^1]、空配列を空オブジェクトとしてエンコードさせたいだけなら、空の`stdClass()`を使うという方法があります。
+
+```php:map2.php
+<?php
+
+$map = [
+    'even' => [0, 2, 4, 6, 8,],
+    'odd' => [1, 3, 5, 7, 9,],
+    'prime' => [2, 3, 5, 7,],
+];
+
+echo json_encode($map);
+
+// キーがfibonacciの要素のみを選択。結果は空配列となる。
+$filtered_map = array_filter($map, function ($key) {
+    return $key === 'fibonacci';
+}, ARRAY_FILTER_USE_KEY);
+
+if (empty($filtered_map)) {
+    // エンコードするときに空オブジェクトとなる
+    $filtered_map = new stdClass();
+}
+
+echo json_encode($filtered_map);
+```
+
+`stdClass()`は何もフィールドに値を入れていなければ、空オブジェクトとしてエンコードされます。
+
+```bash
+php map2.php
+{"even":[0,2,4,6,8],"odd":[1,3,5,7,9],"prime":[2,3,5,7]}
+{}
+```
+
+面倒ではありますが、以下のようなやり方が妥協案なのかなと思ってます。
+
+- 多次元でない構造(配列などを入れないことが分かるレベル)であれば、`JSON_FORCE_OBJECT`オプションを使ってしまう
+- 多次元の構造の場合、`array_filter`などの処理によって空になりそうな連想配列があるときには[^2]、`stdClass()`を代入する分岐を入れておく
+
+PHPにおける「配列と連想配列が同じ文法」という世界観は今までそこまで困ったことはなかったのですが、エンコードとかで他のフォーマットに変えるときにはやはり無理が出てくるなと感じました。
+
+[^1]: あったら僕も知りたいので教えて下さい。
+[^2]: `array_filter`が悪者と勘違いしてしまうかもですが、`array_diff`とか`unset`とかもあります。あくまで例です。
