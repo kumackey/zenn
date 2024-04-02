@@ -1,4 +1,4 @@
-module github.com/kumackey/zenn
+module samples/d20230603-9fe610772cd913
 
 go 1.20
 
